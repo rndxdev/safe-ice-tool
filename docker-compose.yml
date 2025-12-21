@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: safe-ice-postgres
+    environment:
+      POSTGRES_DB: safe_ice_tool
+      POSTGRES_USER: safeice
+      POSTGRES_PASSWORD: safeice_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - safe_ice_pgdata:/var/lib/postgresql/data
+
+volumes:
+  safe_ice_pgdata:
