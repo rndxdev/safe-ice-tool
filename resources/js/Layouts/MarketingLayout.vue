@@ -1,5 +1,6 @@
 <script setup>
 import { Link } from '@inertiajs/vue3';
+import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 </script>
 
 <template>
@@ -8,8 +9,9 @@ import { Link } from '@inertiajs/vue3';
       <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
         <Link
           :href="route('welcome')"
-          class="text-sm font-semibold tracking-tight"
+          class="flex items-center gap-2 text-sm font-semibold tracking-tight"
         >
+          <ApplicationLogo class="h-8 w-8 text-sky-400" />
           Safe Ice Tool
         </Link>
 

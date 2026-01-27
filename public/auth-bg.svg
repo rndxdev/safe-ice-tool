@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <!-- Gradient for the sky/ice feel -->
+    <linearGradient id="skyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0c4a6e" />
+      <stop offset="50%" style="stop-color:#0369a1" />
+      <stop offset="100%" style="stop-color:#0ea5e9" />
+    </linearGradient>
+
+    <!-- Snowflake symbol -->
+    <symbol id="snowflake" viewBox="0 0 32 32">
+      <g stroke="currentColor" stroke-width="1" fill="none" stroke-linecap="round" opacity="0.6">
+        <line x1="16" y1="2" x2="16" y2="30" />
+        <line x1="2" y1="16" x2="30" y2="16" />
+        <line x1="6" y1="6" x2="26" y2="26" />
+        <line x1="26" y1="6" x2="6" y2="26" />
+        <line x1="16" y1="5" x2="13" y2="8" />
+        <line x1="16" y1="5" x2="19" y2="8" />
+        <line x1="16" y1="27" x2="13" y2="24" />
+        <line x1="16" y1="27" x2="19" y2="24" />
+        <line x1="5" y1="16" x2="8" y2="13" />
+        <line x1="5" y1="16" x2="8" y2="19" />
+        <line x1="27" y1="16" x2="24" y2="13" />
+        <line x1="27" y1="16" x2="24" y2="19" />
+      </g>
+    </symbol>
+
+    <!-- Small ice crystal -->
+    <symbol id="crystal" viewBox="0 0 20 20">
+      <g stroke="currentColor" stroke-width="0.75" fill="none" stroke-linecap="round" opacity="0.4">
+        <line x1="10" y1="2" x2="10" y2="18" />
+        <line x1="2" y1="10" x2="18" y2="10" />
+        <line x1="5" y1="5" x2="15" y2="15" />
+        <line x1="15" y1="5" x2="5" y2="15" />
+      </g>
+    </symbol>
+  </defs>
+
+  <!-- Background gradient -->
+  <rect width="100%" height="100%" fill="url(#skyGradient)" />
+
+  <!-- Ice/frost texture layer -->
+  <g fill="none" stroke="white" opacity="0.1">
+    <path d="M0 200 Q 480 150 960 200 T 1920 200" stroke-width="2" />
+    <path d="M0 400 Q 480 350 960 400 T 1920 400" stroke-width="1.5" />
+    <path d="M0 600 Q 480 550 960 600 T 1920 600" stroke-width="1" />
+    <path d="M0 800 Q 480 750 960 800 T 1920 800" stroke-width="0.75" />
+  </g>
+
+  <!-- Scattered snowflakes - large -->
+  <g fill="white" stroke="white">
+    <use href="#snowflake" x="100" y="80" width="48" height="48" />
+    <use href="#snowflake" x="300" y="200" width="40" height="40" />
+    <use href="#snowflake" x="1700" y="100" width="52" height="52" />
+    <use href="#snowflake" x="1500" y="300" width="44" height="44" />
+    <use href="#snowflake" x="150" y="500" width="36" height="36" />
+    <use href="#snowflake" x="1750" y="600" width="40" height="40" />
+    <use href="#snowflake" x="250" y="800" width="48" height="48" />
+    <use href="#snowflake" x="1600" y="850" width="44" height="44" />
+    <use href="#snowflake" x="50" y="950" width="32" height="32" />
+    <use href="#snowflake" x="1850" y="400" width="36" height="36" />
+  </g>
+
+  <!-- Scattered snowflakes - medium -->
+  <g fill="white" stroke="white">
+    <use href="#snowflake" x="500" y="50" width="28" height="28" />
+    <use href="#snowflake" x="700" y="150" width="24" height="24" />
+    <use href="#snowflake" x="1200" y="80" width="30" height="30" />
+    <use href="#snowflake" x="1400" y="180" width="26" height="26" />
+    <use href="#snowflake" x="400" y="400" width="28" height="28" />
+    <use href="#snowflake" x="600" y="650" width="24" height="24" />
+    <use href="#snowflake" x="1300" y="500" width="28" height="28" />
+    <use href="#snowflake" x="1100" y="750" width="26" height="26" />
+    <use href="#snowflake" x="450" y="900" width="30" height="30" />
+    <use href="#snowflake" x="1450" y="950" width="24" height="24" />
+  </g>
+
+  <!-- Small ice crystals scattered -->
+  <g fill="white" stroke="white">
+    <use href="#crystal" x="200" y="120" width="16" height="16" />
+    <use href="#crystal" x="850" y="90" width="14" height="14" />
+    <use href="#crystal" x="1050" y="200" width="16" height="16" />
+    <use href="#crystal" x="1650" y="220" width="14" height="14" />
+    <use href="#crystal" x="350" y="350" width="12" height="12" />
+    <use href="#crystal" x="550" y="480" width="16" height="16" />
+    <use href="#crystal" x="750" y="380" width="14" height="14" />
+    <use href="#crystal" x="950" y="550" width="12" height="12" />
+    <use href="#crystal" x="1150" y="420" width="16" height="16" />
+    <use href="#crystal" x="1350" y="620" width="14" height="14" />
+    <use href="#crystal" x="100" y="700" width="12" height="12" />
+    <use href="#crystal" x="650" y="820" width="16" height="16" />
+    <use href="#crystal" x="900" y="900" width="14" height="14" />
+    <use href="#crystal" x="1250" y="880" width="12" height="12" />
+    <use href="#crystal" x="1550" y="750" width="16" height="16" />
+    <use href="#crystal" x="1800" y="950" width="14" height="14" />
+  </g>
+
+  <!-- Subtle fish silhouettes in the "ice" -->
+  <g fill="white" opacity="0.08">
+    <path d="M300 700 C300 700 320 680 360 680 C390 680 410 695 420 700 C410 705 390 720 360 720 C320 720 300 700 300 700 Z" />
+    <path d="M270 700 L300 685 L300 715 Z" />
+
+    <path d="M1500 350 C1500 350 1520 330 1560 330 C1590 330 1610 345 1620 350 C1610 355 1590 370 1560 370 C1520 370 1500 350 1500 350 Z" />
+    <path d="M1470 350 L1500 335 L1500 365 Z" />
+
+    <path d="M800 950 C800 950 815 935 845 935 C865 935 880 945 888 950 C880 955 865 965 845 965 C815 965 800 950 800 950 Z" />
+    <path d="M778 950 L800 940 L800 960 Z" />
+  </g>
+</svg>
