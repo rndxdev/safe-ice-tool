@@ -8,11 +8,13 @@ use App\Http\Controllers\TripShareController;
 use App\Http\Controllers\TripPostController;
 use App\Http\Controllers\TripPostShareController;
 use App\Http\Controllers\TripPostCommentController;
-use App\Models\IceReport;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\FeedInteractionController;
+use App\Http\Controllers\CommentLikeController;
+use App\Http\Controllers\LakeVerificationController;
 use App\Models\Trip;
 use App\Services\LakeSafetyService;
 use Illuminate\Foundation\Application;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -70,50 +72,20 @@ Route::get('/p/{token}', [TripPostShareController::class, 'show'])
 // Authenticated area
 Route::middleware(['auth', 'verified'])->group(function () {
     // Dashboard
-    Route::get('/dashboard', function () {
-        $user = Auth::user();
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
-        $favoriteLakes = $user->favoriteLakes()
-            ->select('lakes.id', 'lakes.name', 'lakes.slug', 'lakes.region')
-            ->orderBy('lakes.name')
-            ->get();
+    Route::post('/feed/acknowledge', [FeedInteractionController::class, 'acknowledge'])
+        ->name('feed.acknowledge');
+    Route::post('/feed/like', [FeedInteractionController::class, 'toggleLike'])
+        ->name('feed.like');
+    Route::post('/feed/comment', [FeedInteractionController::class, 'comment'])
+        ->name('feed.comment');
 
-        $favoriteLakeIds = $favoriteLakes->pluck('id')->values()->all();
+    Route::post('/comments/like', [CommentLikeController::class, 'toggle'])
+        ->name('comments.like');
 
-        $upcomingTrips = Trip::with('lake')
-            ->where('user_id', $user->id)
-            ->orderBy('trip_date')
-            ->limit(5)
-            ->get();
-
-        $recentReports = [];
-
-        if (!empty($favoriteLakeIds)) {
-            $recentReports = IceReport::with('lake')
-                ->whereIn('lake_id', $favoriteLakeIds)
-                ->where('is_hidden', false)
-                ->latest()
-                ->limit(5)
-                ->get([
-                    'id',
-                    'lake_id',
-                    'thickness_inches',
-                    'ice_type',
-                    'traffic_type',
-                    'has_slush',
-                    'has_pressure_cracks',
-                    'notes',
-                    'created_at',
-                ]);
-        }
-
-        return Inertia::render('Dashboard', [
-            'user' => $user->only(['id', 'name', 'email']),
-            'favoriteLakes' => $favoriteLakes,
-            'upcomingTrips' => $upcomingTrips,
-            'recentReports' => $recentReports,
-        ]);
-    })->name('dashboard');
+    Route::post('/lakes/{lake}/verify', [LakeVerificationController::class, 'store'])
+        ->name('lakes.verify');
 
     // Profile
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

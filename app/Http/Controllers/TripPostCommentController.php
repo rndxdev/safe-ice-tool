@@ -17,11 +17,20 @@ class TripPostCommentController extends Controller
 
         $data = $request->validate([
             'body' => ['required', 'string', 'max:2000'],
+            'parent_id' => ['nullable', 'integer', 'min:1'],
         ]);
+
+        if (!empty($data['parent_id'])) {
+            $parent = TripPostComment::query()
+                ->where('id', $data['parent_id'])
+                ->where('trip_post_id', $post->id)
+                ->firstOrFail();
+        }
 
         TripPostComment::create([
             'trip_post_id' => $post->id,
             'user_id' => Auth::id(),
+            'parent_id' => $data['parent_id'] ?? null,
             'body' => $data['body'],
         ]);
 

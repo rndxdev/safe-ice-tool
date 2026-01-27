@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use App\Models\IceReport;
+use App\Models\LakeVerification;
 
 
 
@@ -213,8 +215,49 @@ class LakeController extends Controller
             ->orderByDesc('created_at')
             ->get(['id', 'name', 'slug', 'region', 'lat', 'lng', 'state', 'county', 'status', 'created_at']);
 
+        $reviewLakes = Lake::where('status', 'pending')
+            ->where('created_by_user_id', '!=', $userId)
+            ->orderByDesc('created_at')
+            ->limit(25)
+            ->get(['id', 'name', 'slug', 'region', 'lat', 'lng', 'state', 'county', 'status', 'created_at']);
+
+        $reviewIds = $reviewLakes->pluck('id')->values()->all();
+        $reviewReports = IceReport::whereIn('lake_id', $reviewIds)
+            ->where('is_hidden', false)
+            ->get(['lake_id']);
+
+        $reviewVerifications = LakeVerification::whereIn('lake_id', $reviewIds)
+            ->get(['lake_id', 'user_id', 'verdict']);
+
+        $userVerifications = $reviewVerifications
+            ->where('user_id', $userId)
+            ->keyBy('lake_id');
+
+        $verificationCounts = $reviewVerifications
+            ->groupBy('lake_id')
+            ->map(function ($group) {
+                return [
+                    'approve' => $group->where('verdict', 'approve')->count(),
+                    'reject' => $group->where('verdict', 'reject')->count(),
+                    'flag' => $group->where('verdict', 'flag')->count(),
+                ];
+            });
+
+        $reportCounts = $reviewReports
+            ->groupBy('lake_id')
+            ->map(fn ($group) => $group->count());
+
+        $reviewLakes = $reviewLakes->map(function (Lake $lake) use ($verificationCounts, $reportCounts, $userVerifications) {
+            $counts = $verificationCounts[$lake->id] ?? ['approve' => 0, 'reject' => 0, 'flag' => 0];
+            $lake->verification_counts = $counts;
+            $lake->report_count = (int) ($reportCounts[$lake->id] ?? 0);
+            $lake->user_verdict = $userVerifications->get($lake->id)?->verdict;
+            return $lake;
+        });
+
         return Inertia::render('Lakes/Mine', [
             'lakes' => $lakes,
+            'reviewLakes' => $reviewLakes,
         ]);
     }
 

@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Trip;
 use App\Models\TripPost;
 use App\Models\TripPostMedia;
+use App\Models\TripPostComment;
+use App\Models\CommentLike;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -20,6 +22,80 @@ class TripPostController extends Controller
             ->latest()
             ->limit(50)
             ->get();
+
+        $postIds = $posts->pluck('id')->values()->all();
+
+        $comments = TripPostComment::with('user:id,name')
+            ->whereIn('trip_post_id', $postIds)
+            ->latest()
+            ->get([
+                'id',
+                'trip_post_id',
+                'user_id',
+                'parent_id',
+                'body',
+                'created_at',
+            ]);
+
+        $commentIds = $comments->pluck('id')->values()->all();
+        $commentLikes = CommentLike::query()
+            ->where('comment_type', 'trip_post_comment')
+            ->whereIn('comment_id', $commentIds)
+            ->get(['comment_id', 'user_id']);
+
+        $commentLikeCounts = $commentLikes
+            ->groupBy('comment_id')
+            ->map(fn ($group) => $group->count());
+
+        $commentLikedByUser = $commentLikes
+            ->where('user_id', Auth::id())
+            ->pluck('comment_id')
+            ->flip();
+
+        $commentsByPost = $comments
+            ->map(function (TripPostComment $comment) use ($commentLikeCounts, $commentLikedByUser) {
+                return [
+                    'id' => $comment->id,
+                    'body' => $comment->body,
+                    'created_at' => $comment->created_at,
+                    'parent_id' => $comment->parent_id,
+                    'user' => $comment->user ? [
+                        'id' => $comment->user->id,
+                        'name' => $comment->user->name,
+                    ] : null,
+                    'like_count' => (int) ($commentLikeCounts[$comment->id] ?? 0),
+                    'liked' => $commentLikedByUser->has($comment->id),
+                    'post_id' => $comment->trip_post_id,
+                ];
+            })
+            ->groupBy('post_id')
+            ->map(function ($group) {
+                $byId = $group->keyBy('id');
+                $children = [];
+                foreach ($group as $comment) {
+                    if (!empty($comment['parent_id'])) {
+                        $children[$comment['parent_id']][] = $comment;
+                    }
+                }
+                foreach ($children as $parentId => $replies) {
+                    if ($byId->has($parentId)) {
+                        $parent = $byId[$parentId];
+                        $parent['replies'] = collect($replies)->sortBy('created_at')->values();
+                        $byId[$parentId] = $parent;
+                    }
+                }
+                return $byId
+                    ->filter(fn ($c) => empty($c['parent_id']))
+                    ->sortByDesc('created_at')
+                    ->take(2)
+                    ->sortBy('created_at')
+                    ->values();
+            });
+
+        $posts = $posts->map(function (TripPost $post) use ($commentsByPost) {
+            $post->comments_preview = $commentsByPost[$post->id] ?? [];
+            return $post;
+        });
 
         return Inertia::render('Posts/Index', [
             'posts' => $posts,
@@ -41,9 +117,25 @@ class TripPostController extends Controller
             'id',
             'trip_post_id',
             'user_id',
+            'parent_id',
             'body',
             'created_at',
         ]);
+
+    $commentIds = $comments->pluck('id')->values()->all();
+    $commentLikes = CommentLike::query()
+        ->where('comment_type', 'trip_post_comment')
+        ->whereIn('comment_id', $commentIds)
+        ->get(['comment_id', 'user_id']);
+
+    $commentLikeCounts = $commentLikes
+        ->groupBy('comment_id')
+        ->map(fn ($group) => $group->count());
+
+    $commentLikedByUser = $commentLikes
+        ->where('user_id', Auth::id())
+        ->pluck('comment_id')
+        ->flip();
 
     return Inertia::render('Posts/Show', [
         'post' => [
@@ -69,10 +161,13 @@ class TripPostController extends Controller
             'id' => $c->id,
             'body' => $c->body,
             'created_at' => $c->created_at,
+            'parent_id' => $c->parent_id,
             'user' => $c->user ? [
                 'id' => $c->user->id,
                 'name' => $c->user->name,
             ] : null,
+            'like_count' => (int) ($commentLikeCounts[$c->id] ?? 0),
+            'liked' => $commentLikedByUser->has($c->id),
         ])->values(),
     ]);
 }

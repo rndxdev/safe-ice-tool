@@ -8,11 +8,12 @@ import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link } from '@inertiajs/vue3';
 
 const showingNavigationDropdown = ref(false);
+const currentYear = new Date().getFullYear();
 </script>
 
 <template>
   <div>
-    <div class="min-h-screen bg-slate-100">
+    <div class="min-h-screen bg-slate-100 flex flex-col">
       <nav class="border-b border-slate-700 bg-slate-900">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div class="flex h-16 justify-between">
@@ -221,9 +222,44 @@ const showingNavigationDropdown = ref(false);
         </div>
       </header>
 
-      <main>
+      <main class="flex-1">
         <slot />
       </main>
+
+      <footer class="border-t border-slate-800 bg-slate-900">
+        <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <div class="grid gap-6 md:grid-cols-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <ApplicationLogo class="block h-8 w-auto fill-current text-sky-400" />
+                <span class="text-sm font-semibold text-white tracking-tight">Safe Ice Tool</span>
+              </div>
+              <p class="mt-2 text-sm text-slate-300">
+                Community-driven ice reports and trip planning for safer days on the lake.
+              </p>
+            </div>
+            <div>
+              <h4 class="text-sm font-semibold text-white">Safety first</h4>
+              <p class="mt-2 text-sm text-slate-300">
+                Ice conditions change fast. Always verify thickness locally and follow official guidance.
+              </p>
+            </div>
+            <div>
+              <h4 class="text-sm font-semibold text-white">Resources</h4>
+              <div class="mt-2 space-y-2 text-sm text-slate-300">
+                <a href="https://www.weather.gov" target="_blank" rel="noopener noreferrer"
+                  class="block hover:text-white">National Weather Service</a>
+                <a href="https://www.redcross.org/get-help/how-to-prepare-for-emergencies/types-of-emergencies/winter-storm.html"
+                  target="_blank" rel="noopener noreferrer"
+                  class="block hover:text-white">Red Cross Winter Storm Safety</a>
+              </div>
+            </div>
+          </div>
+          <div class="mt-6 border-t border-slate-800 pt-4 text-xs text-slate-400">
+            © {{ currentYear }} Safe Ice Tool. All rights reserved.
+          </div>
+        </div>
+      </footer>
     </div>
   </div>
 </template>

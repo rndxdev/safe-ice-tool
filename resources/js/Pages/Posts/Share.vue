@@ -1,5 +1,6 @@
 <script setup>
 import GuestLayout from '@/Layouts/GuestLayout.vue';
+import CommentThread from '@/Components/CommentThread.vue';
 import { Head, Link } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -157,28 +158,12 @@ function shareNative() {
           Comments are visible here, but posting requires an account.
         </div>
 
-        <div v-if="comments.length === 0" class="text-sm text-gray-500">
-          No comments yet.
-        </div>
-
-        <ul v-else class="space-y-2">
-          <li
-            v-for="c in comments"
-            :key="c.id"
-            class="border rounded-lg p-3"
-          >
-            <div class="text-xs text-gray-500 flex justify-between gap-2">
-              <div>
-                <span v-if="c.user?.name">{{ c.user.name }}</span>
-                <span v-else>Member</span>
-              </div>
-              <div>{{ formatDateTime(c.created_at) }}</div>
-            </div>
-            <div class="mt-2 text-sm text-gray-900 whitespace-pre-line">
-              {{ c.body }}
-            </div>
-          </li>
-        </ul>
+        <CommentThread
+          :comments="comments"
+          :showLikes="true"
+          :canLike="false"
+          :showHeader="false"
+        />
 
         <div class="flex gap-2 pt-2">
           <Link

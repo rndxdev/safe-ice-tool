@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import CommentThread from '@/Components/CommentThread.vue';
+import { Head, Link, router } from '@inertiajs/vue3';
 
 const props = defineProps({
   posts: {
@@ -14,6 +15,13 @@ function formatDateTime(dateStr) {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return String(dateStr);
   return d.toLocaleString();
+}
+
+function likePostComment(comment) {
+  router.post(route('comments.like'), {
+    comment_type: 'trip_post_comment',
+    comment_id: comment.id,
+  }, { preserveScroll: true });
 }
 </script>
 
@@ -81,6 +89,16 @@ function formatDateTime(dateStr) {
 
           <div v-if="p.comments_count" class="mt-1 text-xs text-gray-500">
             Comments: {{ p.comments_count }}
+          </div>
+
+          <div v-if="p.comments_preview && p.comments_preview.length" class="mt-3">
+            <CommentThread
+              :comments="p.comments_preview"
+              :showLikes="true"
+              :canLike="true"
+              :showHeader="false"
+              @like="likePostComment"
+            />
           </div>
         </li>
       </ul>
