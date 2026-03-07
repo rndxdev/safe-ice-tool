@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\FeedAcknowledgement;
 use App\Models\FeedComment;
 use App\Models\FeedReaction;
+use App\Services\MentionNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -75,7 +76,7 @@ class FeedInteractionController extends Controller
                 ->firstOrFail();
         }
 
-        FeedComment::create([
+        $comment = FeedComment::create([
             'user_id' => Auth::id(),
             'item_type' => $data['item_type'],
             'item_id' => $data['item_id'],
@@ -83,6 +84,25 @@ class FeedInteractionController extends Controller
             'body' => $data['body'],
         ]);
 
+        // Process @mentions and create notifications
+        $mentionService = app(MentionNotificationService::class);
+        $mentionService->processText(
+            $data['body'],
+            Auth::user(),
+            'a comment',
+            $this->getUrlForItem($data['item_type'], $data['item_id']),
+            $comment->id
+        );
+
         return back();
+    }
+
+    private function getUrlForItem(string $type, int $id): ?string
+    {
+        // Posts have dedicated pages, everything else appears on dashboard feed
+        return match ($type) {
+            'post' => route('posts.show', $id),
+            default => route('dashboard'),
+        };
     }
 }

@@ -17,7 +17,7 @@ class TripPostController extends Controller
     public function index()
     {
         $posts = TripPost::query()
-            ->with(['user:id,name', 'lake:id,name,slug,region', 'media'])
+            ->with(['user:id,name,username', 'lake:id,name,slug,region', 'media'])
             ->where('is_public', true)
             ->latest()
             ->limit(50)
@@ -25,7 +25,7 @@ class TripPostController extends Controller
 
         $postIds = $posts->pluck('id')->values()->all();
 
-        $comments = TripPostComment::with('user:id,name')
+        $comments = TripPostComment::with('user:id,name,username')
             ->whereIn('trip_post_id', $postIds)
             ->latest()
             ->get([
@@ -62,6 +62,7 @@ class TripPostController extends Controller
                     'user' => $comment->user ? [
                         'id' => $comment->user->id,
                         'name' => $comment->user->name,
+                        'username' => $comment->user->username,
                     ] : null,
                     'like_count' => (int) ($commentLikeCounts[$comment->id] ?? 0),
                     'liked' => $commentLikedByUser->has($comment->id),
@@ -145,6 +146,7 @@ class TripPostController extends Controller
             'user' => $post->user ? [
                 'id' => $post->user->id,
                 'name' => $post->user->name,
+                'username' => $post->user->username,
             ] : null,
             'lake' => $post->trip && $post->trip->lake ? [
                 'name' => $post->trip->lake->name,
@@ -154,7 +156,7 @@ class TripPostController extends Controller
             'media' => $post->media->map(fn ($m) => [
                 'id' => $m->id,
                 'url' => $m->url,
-                'mime' => $m->mime_type,
+                'mime' => $m->mime,
             ])->values(),
         ],
         'comments' => $comments->map(fn ($c) => [
@@ -165,6 +167,7 @@ class TripPostController extends Controller
             'user' => $c->user ? [
                 'id' => $c->user->id,
                 'name' => $c->user->name,
+                'username' => $c->user->username,
             ] : null,
             'like_count' => (int) ($commentLikeCounts[$c->id] ?? 0),
             'liked' => $commentLikedByUser->has($c->id),

@@ -57,7 +57,7 @@ class DashboardController extends Controller
         $communityFeed = collect();
 
         $communityFeed = $communityFeed->merge(
-            IceReport::with(['lake:id,name,slug,region', 'user:id,name'])
+            IceReport::with(['lake:id,name,slug,region', 'user:id,name,username'])
                 ->where('is_hidden', false)
                 ->latest()
                 ->limit(8)
@@ -87,6 +87,7 @@ class DashboardController extends Controller
                         'user' => $report->user ? [
                             'id' => $report->user->id,
                             'name' => $report->user->name,
+                            'username' => $report->user->username,
                         ] : null,
                         'url' => $report->lake ? route('lakes.show', $report->lake->slug) : null,
                     ];
@@ -94,7 +95,7 @@ class DashboardController extends Controller
         );
 
         $communityFeed = $communityFeed->merge(
-            TripPost::with(['user:id,name', 'lake:id,name,slug,region'])
+            TripPost::with(['user:id,name,username', 'lake:id,name,slug,region'])
                 ->where('is_public', true)
                 ->latest()
                 ->limit(8)
@@ -123,6 +124,7 @@ class DashboardController extends Controller
                         'user' => $post->user ? [
                             'id' => $post->user->id,
                             'name' => $post->user->name,
+                            'username' => $post->user->username,
                         ] : null,
                         'url' => route('posts.show', $post->id),
                     ];
@@ -130,7 +132,7 @@ class DashboardController extends Controller
         );
 
         $communityFeed = $communityFeed->merge(
-            TripPostComment::with(['user:id,name', 'post:id,lake_id,is_public', 'post.lake:id,name,slug,region'])
+            TripPostComment::with(['user:id,name,username', 'post:id,lake_id,is_public', 'post.lake:id,name,slug,region'])
                 ->whereHas('post', function ($query) {
                     $query->where('is_public', true);
                 })
@@ -161,6 +163,7 @@ class DashboardController extends Controller
                         'user' => $comment->user ? [
                             'id' => $comment->user->id,
                             'name' => $comment->user->name,
+                            'username' => $comment->user->username,
                         ] : null,
                         'url' => route('posts.show', $comment->trip_post_id),
                     ];
@@ -168,7 +171,7 @@ class DashboardController extends Controller
         );
 
         $communityFeed = $communityFeed->merge(
-            Trip::with(['lake:id,name,slug,region', 'user:id,name'])
+            Trip::with(['lake:id,name,slug,region', 'user:id,name,username'])
                 ->where('is_public', true)
                 ->whereNotNull('share_token')
                 ->latest()
@@ -198,6 +201,7 @@ class DashboardController extends Controller
                         'user' => $trip->user ? [
                             'id' => $trip->user->id,
                             'name' => $trip->user->name,
+                            'username' => $trip->user->username,
                         ] : null,
                         'url' => route('trips.share.show', $trip->share_token),
                     ];
@@ -275,7 +279,7 @@ class DashboardController extends Controller
             ->groupBy(fn ($row) => $row->item_type . ':' . $row->item_id)
             ->map(fn ($group) => $group->count());
 
-        $feedComments = FeedComment::with('user:id,name')
+        $feedComments = FeedComment::with('user:id,name,username')
             ->whereIn('item_type', $idsByType->keys())
             ->whereIn('item_id', $idsByType->flatten()->values()->all())
             ->latest()
@@ -305,16 +309,23 @@ class DashboardController extends Controller
             ->pluck('comment_id')
             ->flip();
 
+        // Build a lookup of comment id -> user name for reply-to references
+        $commentUserLookup = $feedComments->mapWithKeys(function (FeedComment $comment) {
+            return [$comment->id => $comment->user?->name ?? 'Someone'];
+        });
+
         $feedCommentsByItem = $feedComments
-            ->map(function (FeedComment $comment) use ($feedCommentLikeCounts, $feedCommentLikedByUser) {
+            ->map(function (FeedComment $comment) use ($feedCommentLikeCounts, $feedCommentLikedByUser, $commentUserLookup) {
                 return [
                     'id' => $comment->id,
                     'parent_id' => $comment->parent_id,
+                    'reply_to_user' => $comment->parent_id ? ($commentUserLookup[$comment->parent_id] ?? null) : null,
                     'body' => $comment->body,
                     'created_at' => $comment->created_at,
                     'user' => $comment->user ? [
                         'id' => $comment->user->id,
                         'name' => $comment->user->name,
+                        'username' => $comment->user->username,
                     ] : null,
                     'like_count' => (int) ($feedCommentLikeCounts[$comment->id] ?? 0),
                     'liked' => $feedCommentLikedByUser->has($comment->id),
@@ -323,25 +334,11 @@ class DashboardController extends Controller
             })
             ->groupBy('item_key')
             ->map(function ($group) {
-                $byId = $group->keyBy('id');
-                $children = [];
-                foreach ($group as $comment) {
-                    if ($comment['parent_id']) {
-                        $children[$comment['parent_id']][] = $comment;
-                    }
-                }
-                foreach ($children as $parentId => $replies) {
-                    if ($byId->has($parentId)) {
-                        $parent = $byId[$parentId];
-                        $parent['replies'] = collect($replies)->sortBy('created_at')->values();
-                        $byId[$parentId] = $parent;
-                    }
-                }
-                return $byId
-                    ->filter(fn ($c) => empty($c['parent_id']))
-                    ->sortByDesc('created_at')
-                    ->take(3)
+                // Flat thread: sort by created_at ascending, take last 5
+                return $group
                     ->sortBy('created_at')
+                    ->values()
+                    ->take(-5)
                     ->values();
             });
 
@@ -356,7 +353,7 @@ class DashboardController extends Controller
         });
 
         return Inertia::render('Dashboard', [
-            'user' => $user->only(['id', 'name', 'email']),
+            'user' => $user->only(['id', 'name', 'username', 'email']),
             'favoriteLakes' => $favoriteLakes,
             'upcomingTrips' => $upcomingTrips,
             'recentReports' => $recentReports,

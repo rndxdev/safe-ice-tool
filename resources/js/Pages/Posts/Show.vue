@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import UserHandle from '@/Components/UserHandle.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -49,7 +50,7 @@ function submitComment() {
         <ul v-else class="space-y-2">
           <li v-for="c in comments" :key="c.id" class="border rounded p-3">
             <div class="text-xs text-gray-500">
-              {{ c.user?.name ?? 'User' }}
+              <UserHandle :user="c.user" fallback="User" class="text-xs" />
               <span v-if="c.created_at"> · {{ new Date(c.created_at).toLocaleString() }}</span>
             </div>
             <div class="text-sm text-gray-900 whitespace-pre-line mt-1">

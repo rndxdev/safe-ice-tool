@@ -2,7 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import CommentThread from '@/Components/CommentThread.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 
 const props = defineProps({
   user: {
@@ -34,6 +34,7 @@ const toastType = ref('success');
 let toastTimer;
 const commentOpen = ref({});
 const commentDrafts = ref({});
+const highlightedCommentId = ref(null);
 
 // State DNR and fishing resources - keyed by state abbreviation
 // State DNR and fishing resources - keyed by state abbreviation
@@ -305,6 +306,15 @@ function likeFeedComment(comment) {
   }, { preserveScroll: true });
 }
 
+function replyToFeedComment(item, { comment, body }) {
+  router.post(route('feed.comment'), {
+    item_type: item.type,
+    item_id: item.id,
+    body,
+    parent_id: comment.id,
+  }, { preserveScroll: true });
+}
+
 function getThicknessColor(inches) {
   if (inches == null) return 'bg-slate-100 text-slate-600';
   if (inches >= 12) return 'bg-emerald-100 text-emerald-700';
@@ -425,6 +435,28 @@ async function detectLocation() {
 
 onMounted(() => {
   loadSelectedState();
+
+  // Check for comment highlight param from notification
+  const urlParams = new URLSearchParams(window.location.search);
+  const commentId = urlParams.get('comment');
+  if (commentId) {
+    highlightedCommentId.value = commentId;
+
+    // Wait for DOM to render, then scroll to comment
+    nextTick(() => {
+      setTimeout(() => {
+        const el = document.getElementById(`comment-${commentId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+    });
+
+    // Clear highlight after a few seconds
+    setTimeout(() => {
+      highlightedCommentId.value = null;
+    }, 5000);
+  }
 });
 
 watch(selectedState, (value) => {
@@ -463,7 +495,7 @@ async function copyLakeLink(lake) {
 
     <template #header>
       <h2 class="text-xl font-semibold leading-tight text-slate-800">
-        Welcome back, {{ user.name }}
+        Welcome back, {{ user.username ? `@${user.username}` : user.name }}
       </h2>
     </template>
 
@@ -601,8 +633,11 @@ async function copyLakeLink(lake) {
                     :comments="item.comments"
                     :showLikes="true"
                     :canLike="true"
+                    :canReply="true"
                     :showHeader="false"
+                    :highlightedId="highlightedCommentId"
                     @like="likeFeedComment"
+                    @reply="(data) => replyToFeedComment(item, data)"
                   />
                 </div>
               </div>

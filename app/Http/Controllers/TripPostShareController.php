@@ -15,7 +15,7 @@ class TripPostShareController extends Controller
     public function show(string $token)
     {
         $post = TripPost::query()
-            ->with(['user:id,name', 'lake:id,name,slug,region', 'media'])
+            ->with(['user:id,name,username', 'lake:id,name,slug,region', 'media'])
             ->whereNotNull('share_token')
             ->where('share_token', $token)
             ->firstOrFail();
@@ -54,6 +54,7 @@ class TripPostShareController extends Controller
             'user' => $c->user ? [
                 'id' => $c->user->id,
                 'name' => $c->user->name,
+                'username' => $c->user->username,
             ] : null,
             'like_count' => (int) ($commentLikeCounts[$c->id] ?? 0),
             'liked' => false,
