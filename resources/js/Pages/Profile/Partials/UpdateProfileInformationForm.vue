@@ -1,4 +1,5 @@
 <script setup>
+import Checkbox from '@/Components/Checkbox.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -15,9 +16,17 @@ defineProps({
 });
 
 const user = usePage().props.auth.user;
+const visibility = user.profile_visibility || {};
 
 const form = useForm({
     name: user.name,
+    username: user.username || '',
+    bio: user.bio || '',
+    location: user.location || '',
+    profile_visibility: {
+        show_name: visibility.show_name ?? true,
+        show_location: visibility.show_location ?? false,
+    },
     email: user.email,
 });
 </script>
@@ -52,6 +61,73 @@ const form = useForm({
                 />
 
                 <InputError class="mt-2" :message="form.errors.name" />
+            </div>
+
+            <div>
+                <InputLabel for="username" value="Username" />
+
+                <div class="relative mt-1">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">@</span>
+                    <TextInput
+                        id="username"
+                        type="text"
+                        class="block w-full pl-8"
+                        v-model="form.username"
+                        autocomplete="username"
+                        placeholder="your_handle"
+                    />
+                </div>
+                <p class="mt-1 text-xs text-gray-500">Letters, numbers, dashes, and underscores only. This is how you appear in comments.</p>
+
+                <InputError class="mt-2" :message="form.errors.username" />
+            </div>
+
+            <div>
+                <InputLabel for="bio" value="Bio" />
+
+                <textarea
+                    id="bio"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    v-model="form.bio"
+                    rows="3"
+                    maxlength="500"
+                    placeholder="Tell others a bit about yourself..."
+                ></textarea>
+                <p class="mt-1 text-xs text-gray-500">{{ form.bio?.length || 0 }}/500 characters</p>
+
+                <InputError class="mt-2" :message="form.errors.bio" />
+            </div>
+
+            <div>
+                <InputLabel for="location" value="Location" />
+
+                <TextInput
+                    id="location"
+                    type="text"
+                    class="mt-1 block w-full"
+                    v-model="form.location"
+                    placeholder="e.g., Minnesota, USA"
+                    maxlength="100"
+                />
+
+                <InputError class="mt-2" :message="form.errors.location" />
+            </div>
+
+            <div class="rounded-lg border border-gray-200 p-4">
+                <h3 class="text-sm font-medium text-gray-900 mb-3">Profile Privacy</h3>
+                <p class="text-xs text-gray-500 mb-4">Choose what others can see when they view your profile.</p>
+
+                <div class="space-y-3">
+                    <label class="flex items-center">
+                        <Checkbox v-model:checked="form.profile_visibility.show_name" />
+                        <span class="ms-2 text-sm text-gray-600">Show my name</span>
+                    </label>
+
+                    <label class="flex items-center">
+                        <Checkbox v-model:checked="form.profile_visibility.show_location" />
+                        <span class="ms-2 text-sm text-gray-600">Show my location</span>
+                    </label>
+                </div>
             </div>
 
             <div>

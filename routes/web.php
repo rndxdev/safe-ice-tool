@@ -12,6 +12,8 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FeedInteractionController;
 use App\Http\Controllers\CommentLikeController;
 use App\Http\Controllers\LakeVerificationController;
+use App\Http\Controllers\UserProfileController;
+use App\Http\Controllers\NotificationController;
 use App\Models\Trip;
 use App\Services\LakeSafetyService;
 use Illuminate\Foundation\Application;
@@ -86,6 +88,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('/lakes/{lake}/verify', [LakeVerificationController::class, 'store'])
         ->name('lakes.verify');
+
+    // User profiles (public lookup)
+    Route::get('/users/{username}', [UserProfileController::class, 'show'])
+        ->name('users.show');
+
+    // Notifications
+    Route::get('/notifications', [NotificationController::class, 'index'])
+        ->name('notifications.index');
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount'])
+        ->name('notifications.unread');
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'markAsRead'])
+        ->name('notifications.read');
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead'])
+        ->name('notifications.read-all');
 
     // Profile
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

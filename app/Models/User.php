@@ -22,6 +22,11 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
+        'username',
+        'bio',
+        'location',
+        'profile_visibility',
+        'notification_settings',
         'email',
         'password',
     ];
@@ -46,6 +51,8 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'profile_visibility' => 'array',
+            'notification_settings' => 'array',
         ];
     }
 
@@ -56,7 +63,23 @@ class User extends Authenticatable
     }
 
     public function trips(): HasMany
-{
-    return $this->hasMany(Trip::class);
-}
+    {
+        return $this->hasMany(Trip::class);
+    }
+
+    public function iceReports(): HasMany
+    {
+        return $this->hasMany(IceReport::class);
+    }
+
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
+    }
+
+    public function wantsMentionNotifications(): bool
+    {
+        $settings = $this->notification_settings ?? [];
+        return $settings['mentions'] ?? true;
+    }
 }

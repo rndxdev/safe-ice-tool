@@ -17,6 +17,20 @@ class ProfileUpdateRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
+            'username' => [
+                'nullable',
+                'string',
+                'alpha_dash',
+                'max:30',
+                Rule::unique(User::class)->ignore($this->user()->id),
+            ],
+            'bio' => ['nullable', 'string', 'max:500'],
+            'location' => ['nullable', 'string', 'max:100'],
+            'profile_visibility' => ['nullable', 'array'],
+            'profile_visibility.show_name' => ['nullable', 'boolean'],
+            'profile_visibility.show_location' => ['nullable', 'boolean'],
+            'notification_settings' => ['nullable', 'array'],
+            'notification_settings.mentions' => ['nullable', 'boolean'],
             'email' => [
                 'required',
                 'string',
