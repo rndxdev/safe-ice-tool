@@ -23,52 +23,66 @@ class MentionNotificationService
         ?string $url = null,
         ?int $commentId = null
     ): array {
-        $mentionedUsernames = $this->extractMentions($text);
+        $finalUrl = $this->appendCommentAnchor($url, $commentId);
         $notifiedUsers = [];
 
-        // Append comment anchor to URL if we have a comment ID
-        $finalUrl = $url;
-        if ($finalUrl && $commentId) {
-            $separator = str_contains($finalUrl, '?') ? '&' : '?';
-            $finalUrl .= $separator . 'comment=' . $commentId;
-        }
-
-        foreach ($mentionedUsernames as $username) {
-            // Don't notify yourself
-            if (strtolower($username) === strtolower($author->username ?? '')) {
-                continue;
-            }
-
-            $user = User::where('username', $username)->first();
-
+        foreach ($this->extractMentions($text) as $username) {
+            $user = $this->resolveNotifiable($username, $author);
             if (!$user) {
                 continue;
             }
 
-            // Check if user wants mention notifications
-            if (!$user->wantsMentionNotifications()) {
-                continue;
-            }
-
-            // Create notification
-            Notification::create([
-                'user_id' => $user->id,
-                'type' => 'mention',
-                'title' => 'You were mentioned',
-                'message' => sprintf('@%s mentioned you in %s', $author->username ?? $author->name, $contextTitle),
-                'url' => $finalUrl ?? route('dashboard'),
-                'data' => [
-                    'author_id' => $author->id,
-                    'author_username' => $author->username,
-                    'author_name' => $author->name,
-                    'comment_id' => $commentId,
-                ],
-            ]);
-
+            $this->createMentionNotification($user, $author, $contextTitle, $finalUrl, $commentId);
             $notifiedUsers[] = $user->id;
         }
 
         return $notifiedUsers;
+    }
+
+    private function appendCommentAnchor(?string $url, ?int $commentId): ?string
+    {
+        if (!$url || !$commentId) {
+            return $url;
+        }
+        $separator = str_contains($url, '?') ? '&' : '?';
+        return $url . $separator . 'comment=' . $commentId;
+    }
+
+    private function resolveNotifiable(string $username, User $author): ?User
+    {
+        if (strtolower($username) === strtolower($author->username ?? '')) {
+            return null;
+        }
+
+        $user = User::where('username', $username)->first();
+
+        if (!$user || !$user->wantsMentionNotifications()) {
+            return null;
+        }
+
+        return $user;
+    }
+
+    private function createMentionNotification(
+        User $user,
+        User $author,
+        string $contextTitle,
+        ?string $finalUrl,
+        ?int $commentId
+    ): void {
+        Notification::create([
+            'user_id' => $user->id,
+            'type' => 'mention',
+            'title' => 'You were mentioned',
+            'message' => sprintf('@%s mentioned you in %s', $author->username ?? $author->name, $contextTitle),
+            'url' => $finalUrl ?? route('dashboard'),
+            'data' => [
+                'author_id' => $author->id,
+                'author_username' => $author->username,
+                'author_name' => $author->name,
+                'comment_id' => $commentId,
+            ],
+        ]);
     }
 
     /**

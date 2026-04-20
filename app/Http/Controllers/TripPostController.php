@@ -8,8 +8,8 @@ use App\Models\TripPostMedia;
 use App\Models\TripPostComment;
 use App\Models\CommentLike;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class TripPostController extends Controller
@@ -23,75 +23,7 @@ class TripPostController extends Controller
             ->limit(50)
             ->get();
 
-        $postIds = $posts->pluck('id')->values()->all();
-
-        $comments = TripPostComment::with('user:id,name,username')
-            ->whereIn('trip_post_id', $postIds)
-            ->latest()
-            ->get([
-                'id',
-                'trip_post_id',
-                'user_id',
-                'parent_id',
-                'body',
-                'created_at',
-            ]);
-
-        $commentIds = $comments->pluck('id')->values()->all();
-        $commentLikes = CommentLike::query()
-            ->where('comment_type', 'trip_post_comment')
-            ->whereIn('comment_id', $commentIds)
-            ->get(['comment_id', 'user_id']);
-
-        $commentLikeCounts = $commentLikes
-            ->groupBy('comment_id')
-            ->map(fn ($group) => $group->count());
-
-        $commentLikedByUser = $commentLikes
-            ->where('user_id', Auth::id())
-            ->pluck('comment_id')
-            ->flip();
-
-        $commentsByPost = $comments
-            ->map(function (TripPostComment $comment) use ($commentLikeCounts, $commentLikedByUser) {
-                return [
-                    'id' => $comment->id,
-                    'body' => $comment->body,
-                    'created_at' => $comment->created_at,
-                    'parent_id' => $comment->parent_id,
-                    'user' => $comment->user ? [
-                        'id' => $comment->user->id,
-                        'name' => $comment->user->name,
-                        'username' => $comment->user->username,
-                    ] : null,
-                    'like_count' => (int) ($commentLikeCounts[$comment->id] ?? 0),
-                    'liked' => $commentLikedByUser->has($comment->id),
-                    'post_id' => $comment->trip_post_id,
-                ];
-            })
-            ->groupBy('post_id')
-            ->map(function ($group) {
-                $byId = $group->keyBy('id');
-                $children = [];
-                foreach ($group as $comment) {
-                    if (!empty($comment['parent_id'])) {
-                        $children[$comment['parent_id']][] = $comment;
-                    }
-                }
-                foreach ($children as $parentId => $replies) {
-                    if ($byId->has($parentId)) {
-                        $parent = $byId[$parentId];
-                        $parent['replies'] = collect($replies)->sortBy('created_at')->values();
-                        $byId[$parentId] = $parent;
-                    }
-                }
-                return $byId
-                    ->filter(fn ($c) => empty($c['parent_id']))
-                    ->sortByDesc('created_at')
-                    ->take(2)
-                    ->sortBy('created_at')
-                    ->values();
-            });
+        $commentsByPost = $this->buildCommentsPreviewByPost($posts->pluck('id')->values()->all());
 
         $posts = $posts->map(function (TripPost $post) use ($commentsByPost) {
             $post->comments_preview = $commentsByPost[$post->id] ?? [];
@@ -103,77 +35,118 @@ class TripPostController extends Controller
         ]);
     }
 
+    private function buildCommentsPreviewByPost(array $postIds): Collection
+    {
+        $comments = TripPostComment::with('user:id,name,username')
+            ->whereIn('trip_post_id', $postIds)
+            ->latest()
+            ->get(['id', 'trip_post_id', 'user_id', 'parent_id', 'body', 'created_at']);
+
+        [$likeCounts, $likedByUser] = $this->loadCommentLikeStats($comments->pluck('id')->values()->all());
+
+        return $comments
+            ->map(fn (TripPostComment $comment) => $this->formatComment($comment, $likeCounts, $likedByUser) + [
+                'post_id' => $comment->trip_post_id,
+            ])
+            ->groupBy('post_id')
+            ->map(fn ($group) => $this->threadCommentsForPreview($group));
+    }
+
+    private function threadCommentsForPreview(Collection $group): Collection
+    {
+        $byId = $group->keyBy('id');
+        $children = [];
+        foreach ($group as $comment) {
+            if (!empty($comment['parent_id'])) {
+                $children[$comment['parent_id']][] = $comment;
+            }
+        }
+        foreach ($children as $parentId => $replies) {
+            if ($byId->has($parentId)) {
+                $parent = $byId[$parentId];
+                $parent['replies'] = collect($replies)->sortBy('created_at')->values();
+                $byId[$parentId] = $parent;
+            }
+        }
+        return $byId
+            ->filter(fn ($c) => empty($c['parent_id']))
+            ->sortByDesc('created_at')
+            ->take(2)
+            ->sortBy('created_at')
+            ->values();
+    }
+
     public function show(TripPost $post)
-{
-    $post->load([
-        'trip.lake',
-        'user',
-        'media',
-    ]);
+    {
+        $post->load(['trip.lake', 'user', 'media']);
 
-    $comments = $post->comments()
-        ->with('user')
-        ->orderBy('created_at', 'asc')
-        ->get([
-            'id',
-            'trip_post_id',
-            'user_id',
-            'parent_id',
-            'body',
-            'created_at',
+        $comments = $post->comments()
+            ->with('user')
+            ->orderBy('created_at', 'asc')
+            ->get(['id', 'trip_post_id', 'user_id', 'parent_id', 'body', 'created_at']);
+
+        [$likeCounts, $likedByUser] = $this->loadCommentLikeStats($comments->pluck('id')->values()->all());
+
+        return Inertia::render('Posts/Show', [
+            'post' => [
+                'id' => $post->id,
+                'caption' => $post->caption,
+                'created_at' => $post->created_at,
+                'user' => $post->user ? [
+                    'id' => $post->user->id,
+                    'name' => $post->user->name,
+                    'username' => $post->user->username,
+                ] : null,
+                'lake' => $post->trip && $post->trip->lake ? [
+                    'name' => $post->trip->lake->name,
+                    'slug' => $post->trip->lake->slug,
+                    'region' => $post->trip->lake->region,
+                ] : null,
+                'media' => $post->media->map(fn ($m) => [
+                    'id' => $m->id,
+                    'url' => $m->url,
+                    'mime' => $m->mime,
+                ])->values(),
+            ],
+            'comments' => $comments->map(fn ($c) => $this->formatComment($c, $likeCounts, $likedByUser))->values(),
         ]);
+    }
 
-    $commentIds = $comments->pluck('id')->values()->all();
-    $commentLikes = CommentLike::query()
-        ->where('comment_type', 'trip_post_comment')
-        ->whereIn('comment_id', $commentIds)
-        ->get(['comment_id', 'user_id']);
+    private function loadCommentLikeStats(array $commentIds): array
+    {
+        $commentLikes = CommentLike::query()
+            ->where('comment_type', 'trip_post_comment')
+            ->whereIn('comment_id', $commentIds)
+            ->get(['comment_id', 'user_id']);
 
-    $commentLikeCounts = $commentLikes
-        ->groupBy('comment_id')
-        ->map(fn ($group) => $group->count());
+        $likeCounts = $commentLikes
+            ->groupBy('comment_id')
+            ->map(fn ($group) => $group->count());
 
-    $commentLikedByUser = $commentLikes
-        ->where('user_id', Auth::id())
-        ->pluck('comment_id')
-        ->flip();
+        $likedByUser = $commentLikes
+            ->where('user_id', Auth::id())
+            ->pluck('comment_id')
+            ->flip();
 
-    return Inertia::render('Posts/Show', [
-        'post' => [
-            'id' => $post->id,
-            'caption' => $post->caption,
-            'created_at' => $post->created_at,
-            'user' => $post->user ? [
-                'id' => $post->user->id,
-                'name' => $post->user->name,
-                'username' => $post->user->username,
+        return [$likeCounts, $likedByUser];
+    }
+
+    private function formatComment(TripPostComment $comment, Collection $likeCounts, Collection $likedByUser): array
+    {
+        return [
+            'id' => $comment->id,
+            'body' => $comment->body,
+            'created_at' => $comment->created_at,
+            'parent_id' => $comment->parent_id,
+            'user' => $comment->user ? [
+                'id' => $comment->user->id,
+                'name' => $comment->user->name,
+                'username' => $comment->user->username,
             ] : null,
-            'lake' => $post->trip && $post->trip->lake ? [
-                'name' => $post->trip->lake->name,
-                'slug' => $post->trip->lake->slug,
-                'region' => $post->trip->lake->region,
-            ] : null,
-            'media' => $post->media->map(fn ($m) => [
-                'id' => $m->id,
-                'url' => $m->url,
-                'mime' => $m->mime,
-            ])->values(),
-        ],
-        'comments' => $comments->map(fn ($c) => [
-            'id' => $c->id,
-            'body' => $c->body,
-            'created_at' => $c->created_at,
-            'parent_id' => $c->parent_id,
-            'user' => $c->user ? [
-                'id' => $c->user->id,
-                'name' => $c->user->name,
-                'username' => $c->user->username,
-            ] : null,
-            'like_count' => (int) ($commentLikeCounts[$c->id] ?? 0),
-            'liked' => $commentLikedByUser->has($c->id),
-        ])->values(),
-    ]);
-}
+            'like_count' => (int) ($likeCounts[$comment->id] ?? 0),
+            'liked' => $likedByUser->has($comment->id),
+        ];
+    }
 
 
     public function createForTrip(Trip $trip)
@@ -195,43 +168,43 @@ class TripPostController extends Controller
             abort(403);
         }
 
-      $data = $request->validate([
-    'caption' => ['nullable', 'string', 'max:5000'],
-    'people_tags' => ['nullable', 'array'],
-    'people_tags.*' => ['string', 'max:50'],
-    'location_tags' => ['nullable', 'array'],
-    'location_tags.*' => ['string', 'max:50'],
-    'is_public' => ['nullable'],
-    'photos' => ['nullable', 'array', 'max:10'],
-    'photos.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
-]);
+        $data = $request->validate([
+            'caption' => ['nullable', 'string', 'max:5000'],
+            'people_tags' => ['nullable', 'array'],
+            'people_tags.*' => ['string', 'max:50'],
+            'location_tags' => ['nullable', 'array'],
+            'location_tags.*' => ['string', 'max:50'],
+            'is_public' => ['nullable'],
+            'photos' => ['nullable', 'array', 'max:10'],
+            'photos.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
+        ]);
 
-$post = TripPost::create([
-    'user_id' => Auth::id(),
-    'trip_id' => $trip->id,
-    'lake_id' => $trip->lake_id,
-    'caption' => $data['caption'] ?? null,
-    'people_tags' => $data['people_tags'] ?? null,
-    'location_tags' => $data['location_tags'] ?? null,
-    'is_public' => $request->boolean('is_public', true),
-]);
+        $post = TripPost::create([
+            'user_id' => Auth::id(),
+            'trip_id' => $trip->id,
+            'lake_id' => $trip->lake_id,
+            'caption' => $data['caption'] ?? null,
+            'people_tags' => $data['people_tags'] ?? null,
+            'location_tags' => $data['location_tags'] ?? null,
+            'is_public' => $request->boolean('is_public', true),
+        ]);
 
+        $this->storePostMedia($post, $request->file('photos', []));
 
-        $files = $request->file('photos', []);
+        return redirect()->route('posts.show', $post->id);
+    }
+
+    private function storePostMedia(TripPost $post, array $files): void
+    {
         $i = 0;
-
         foreach ($files as $file) {
-            $path = $file->store('posts', 'public');
-
             TripPostMedia::create([
                 'trip_post_id' => $post->id,
-                'path' => $path,
+                'path' => $file->store('posts', 'public'),
                 'mime' => $file->getMimeType(),
                 'size' => $file->getSize(),
                 'sort_order' => $i++,
             ]);
         }
-
-        return redirect()->route('posts.show', $post->id);
     }
 }

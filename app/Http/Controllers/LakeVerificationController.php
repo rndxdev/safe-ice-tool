@@ -29,21 +29,20 @@ class LakeVerificationController extends Controller
             return back();
         }
 
-        LakeVerification::updateOrCreate([
-            'lake_id' => $lake->id,
-            'user_id' => Auth::id(),
-        ], [
-            'verdict' => $data['verdict'],
-        ]);
+        LakeVerification::updateOrCreate(
+            ['lake_id' => $lake->id, 'user_id' => Auth::id()],
+            ['verdict' => $data['verdict']],
+        );
 
+        return $this->applyVerdictOutcome($lake);
+    }
+
+    private function applyVerdictOutcome(Lake $lake)
+    {
         $verifications = LakeVerification::where('lake_id', $lake->id)->get(['verdict']);
         $approvals = $verifications->where('verdict', 'approve')->count();
         $rejects = $verifications->where('verdict', 'reject')->count();
         $flags = $verifications->where('verdict', 'flag')->count();
-
-        $reportCount = IceReport::where('lake_id', $lake->id)
-            ->where('is_hidden', false)
-            ->count();
 
         if ($rejects >= self::REJECT_THRESHOLD || $flags >= self::FLAG_THRESHOLD) {
             $lake->status = 'rejected';
@@ -51,6 +50,10 @@ class LakeVerificationController extends Controller
             $lake->save();
             return back()->with('success', 'Lake rejected.');
         }
+
+        $reportCount = IceReport::where('lake_id', $lake->id)
+            ->where('is_hidden', false)
+            ->count();
 
         if ($reportCount >= 1 && $approvals >= self::APPROVAL_THRESHOLD && $flags === 0 && $rejects === 0) {
             $lake->status = 'approved';

@@ -3,114 +3,147 @@
 namespace App\Services;
 
 use App\Models\Lake;
+use Illuminate\Support\Collection;
 
 class LakeSafetyService
 {
     public function computeForLake(Lake $lake, int $days = 10): array
     {
-        $since = now()->subDays($days);
-
-        // Include hidden reports too so disagreement/trolling shows up in the score
         $reports = $lake->iceReports()
-            ->where('created_at', '>=', $since)
+            ->where('created_at', '>=', now()->subDays($days))
             ->get();
 
         if ($reports->isEmpty()) {
-            return [
-                'score' => null,
-                'label' => 'Not enough data',
-                'summary' => 'Not enough recent reports to estimate conditions.',
-                'metrics' => [
-                    'window_days' => $days,
-                    'report_count' => 0,
-                ],
-            ];
+            return $this->emptyResult($days);
         }
 
-        $total = $reports->count();
-
-        $avgThickness = $reports->avg('thickness_inches');
-
-        $slushCount = $reports->where('has_slush', true)->count();
-        $crackCount = $reports->where('has_pressure_cracks', true)->count();
-
-        $hiddenCount = $reports->where('is_hidden', true)->count();
-        $downvotes = $reports->sum('downvotes');
-
-        $slushRatio = $total > 0 ? $slushCount / $total : 0;
-        $crackRatio = $total > 0 ? $crackCount / $total : 0;
-        $hiddenRatio = $total > 0 ? $hiddenCount / $total : 0;
-        $downvotesPerReport = $total > 0 ? $downvotes / $total : 0;
-
-        // Start from neutral 50, then nudge up or down
-        $score = 50;
-
-        // Thickness effect
-        if ($avgThickness !== null) {
-            if ($avgThickness >= 8) {
-                $score += 45;
-            } elseif ($avgThickness >= 4) {
-                $score += 20;
-            } else {
-                $score -= 20;
-            }
-        }
-
-        // Slush effect
-        if ($slushRatio > 0.6) {
-            $score -= 20;
-        } elseif ($slushRatio > 0.3) {
-            $score -= 10;
-        }
-
-        // Pressure cracks effect
-        if ($crackRatio > 0.5) {
-            $score -= 25;
-        } elseif ($crackRatio > 0.2) {
-            $score -= 10;
-        }
-
-        // Hidden/disputed reports
-        if ($hiddenRatio > 0.4) {
-            $score -= 15;
-        } elseif ($hiddenRatio > 0.2) {
-            $score -= 5;
-        }
-
-        // Downvotes as proxy for disagreement/low quality
-        if ($downvotesPerReport > 2) {
-            $score -= 10;
-        } elseif ($downvotesPerReport > 0.5) {
-            $score -= 5;
-        }
-
-        // Clamp between 0 and 100
-        $score = max(0, min(100, $score));
-
-        if ($score >= 75) {
-            $label = 'Stable freeze pattern';
-            $summary = 'Recent reports suggest generally consistent ice with relatively few problem indicators.';
-        } elseif ($score >= 50) {
-            $label = 'Mixed conditions';
-            $summary = 'Some parts of the lake may be fine, but reports show enough issues that you should be selective and cautious.';
-        } else {
-            $label = 'Inconsistent conditions';
-            $summary = 'Reports show thin ice, slush, cracks, or disagreement between users. Treat this lake as highly variable.';
-        }
+        $metrics = $this->computeMetrics($reports, $days);
+        $score = $this->computeScore($metrics);
+        [$label, $summary] = $this->labelFor($score);
 
         return [
             'score' => $score,
             'label' => $label,
             'summary' => $summary,
+            'metrics' => $metrics,
+        ];
+    }
+
+    private function emptyResult(int $days): array
+    {
+        return [
+            'score' => null,
+            'label' => 'Not enough data',
+            'summary' => 'Not enough recent reports to estimate conditions.',
             'metrics' => [
                 'window_days' => $days,
-                'report_count' => $total,
-                'avg_thickness' => $avgThickness,
-                'slush_ratio' => $slushRatio,
-                'crack_ratio' => $crackRatio,
-                'hidden_ratio' => $hiddenRatio,
-                'downvotes_per_report' => $downvotesPerReport,
+                'report_count' => 0,
             ],
+        ];
+    }
+
+    private function computeMetrics(Collection $reports, int $days): array
+    {
+        $total = $reports->count();
+
+        return [
+            'window_days' => $days,
+            'report_count' => $total,
+            'avg_thickness' => $reports->avg('thickness_inches'),
+            'slush_ratio' => $reports->where('has_slush', true)->count() / $total,
+            'crack_ratio' => $reports->where('has_pressure_cracks', true)->count() / $total,
+            'hidden_ratio' => $reports->where('is_hidden', true)->count() / $total,
+            'downvotes_per_report' => $reports->sum('downvotes') / $total,
+        ];
+    }
+
+    private function computeScore(array $metrics): int
+    {
+        $score = 50
+            + $this->thicknessAdjustment($metrics['avg_thickness'])
+            + $this->slushAdjustment($metrics['slush_ratio'])
+            + $this->crackAdjustment($metrics['crack_ratio'])
+            + $this->hiddenAdjustment($metrics['hidden_ratio'])
+            + $this->downvoteAdjustment($metrics['downvotes_per_report']);
+
+        return max(0, min(100, $score));
+    }
+
+    private function thicknessAdjustment(?float $avg): int
+    {
+        if ($avg === null) {
+            return 0;
+        }
+        if ($avg >= 8) {
+            return 45;
+        }
+        if ($avg >= 4) {
+            return 20;
+        }
+        return -20;
+    }
+
+    private function slushAdjustment(float $ratio): int
+    {
+        if ($ratio > 0.6) {
+            return -20;
+        }
+        if ($ratio > 0.3) {
+            return -10;
+        }
+        return 0;
+    }
+
+    private function crackAdjustment(float $ratio): int
+    {
+        if ($ratio > 0.5) {
+            return -25;
+        }
+        if ($ratio > 0.2) {
+            return -10;
+        }
+        return 0;
+    }
+
+    private function hiddenAdjustment(float $ratio): int
+    {
+        if ($ratio > 0.4) {
+            return -15;
+        }
+        if ($ratio > 0.2) {
+            return -5;
+        }
+        return 0;
+    }
+
+    private function downvoteAdjustment(float $perReport): int
+    {
+        if ($perReport > 2) {
+            return -10;
+        }
+        if ($perReport > 0.5) {
+            return -5;
+        }
+        return 0;
+    }
+
+    private function labelFor(int $score): array
+    {
+        if ($score >= 75) {
+            return [
+                'Stable freeze pattern',
+                'Recent reports suggest generally consistent ice with relatively few problem indicators.',
+            ];
+        }
+        if ($score >= 50) {
+            return [
+                'Mixed conditions',
+                'Some parts of the lake may be fine, but reports show enough issues that you should be selective and cautious.',
+            ];
+        }
+        return [
+            'Inconsistent conditions',
+            'Reports show thin ice, slush, cracks, or disagreement between users. Treat this lake as highly variable.',
         ];
     }
 }

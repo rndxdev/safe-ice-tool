@@ -6,6 +6,7 @@ use App\Models\TripPost;
 use App\Models\TripPostComment;
 use App\Models\CommentLike;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -24,25 +25,26 @@ class TripPostShareController extends Controller
             abort(404);
         }
 
+        return Inertia::render('Posts/Share', [
+            'post' => $post,
+            'comments' => $this->buildCommentThread($post->id),
+            'shareUrl' => url()->current(),
+            'canLogin' => route_has('login'),
+            'canRegister' => route_has('register'),
+        ]);
+    }
+
+    private function buildCommentThread(int $postId): Collection
+    {
         $comments = TripPostComment::with('user')
-            ->where('trip_post_id', $post->id)
+            ->where('trip_post_id', $postId)
             ->orderBy('created_at', 'asc')
-            ->get([
-                'id',
-                'trip_post_id',
-                'user_id',
-                'parent_id',
-                'body',
-                'created_at',
-            ]);
+            ->get(['id', 'trip_post_id', 'user_id', 'parent_id', 'body', 'created_at']);
 
-        $commentIds = $comments->pluck('id')->values()->all();
-        $commentLikes = CommentLike::query()
+        $commentLikeCounts = CommentLike::query()
             ->where('comment_type', 'trip_post_comment')
-            ->whereIn('comment_id', $commentIds)
-            ->get(['comment_id', 'user_id']);
-
-        $commentLikeCounts = $commentLikes
+            ->whereIn('comment_id', $comments->pluck('id')->values()->all())
+            ->get(['comment_id', 'user_id'])
             ->groupBy('comment_id')
             ->map(fn ($group) => $group->count());
 
@@ -74,18 +76,11 @@ class TripPostShareController extends Controller
                 $byId[$parentId] = $parent;
             }
         }
-        $thread = $byId
+
+        return $byId
             ->filter(fn ($c) => empty($c['parent_id']))
             ->sortBy('created_at')
             ->values();
-
-        return Inertia::render('Posts/Share', [
-            'post' => $post,
-            'comments' => $thread,
-            'shareUrl' => url()->current(),
-            'canLogin' => route_has('login'),
-            'canRegister' => route_has('register'),
-        ]);
     }
 
     public function share(TripPost $post): RedirectResponse

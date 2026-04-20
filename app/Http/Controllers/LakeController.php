@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Lake;
 use App\Services\LakeSafetyService;
 use App\Services\ReverseGeoCodeService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Illuminate\Http\Request;
@@ -41,24 +42,13 @@ class LakeController extends Controller
         $lat = (float) $data['lat'];
         $lng = (float) $data['lng'];
 
-        // Server-side reverse geocode (US-only example)
-        $place = $geo->usCensus($lat, $lng); // returns ['state' => ..., 'county' => ...] or null
-
+        $place = $geo->usCensus($lat, $lng);
         $state = $place['state'] ?? null;
         $county = $place['county'] ?? null;
 
-        $slugBase = Str::slug($name);
-        $slug = $slugBase;
-        $i = 2;
-
-        while (Lake::where('slug', $slug)->exists()) {
-            $slug = $slugBase . '-' . $i;
-            $i++;
-        }
-
         $lake = Lake::create([
             'name' => $name,
-            'slug' => $slug,
+            'slug' => $this->uniqueSlug($name),
             'lat' => $lat,
             'lng' => $lng,
             'region' => $state && $county ? ($county . ', ' . $state) : null,
@@ -69,11 +59,23 @@ class LakeController extends Controller
             'created_by_user_id' => Auth::id(),
         ]);
 
-
         return redirect()->route('lakes.show', $lake->slug)
             ->with('success', 'Lake added.');
     }
 
+    private function uniqueSlug(string $name): string
+    {
+        $slugBase = Str::slug($name);
+        $slug = $slugBase;
+        $i = 2;
+
+        while (Lake::where('slug', $slug)->exists()) {
+            $slug = $slugBase . '-' . $i;
+            $i++;
+        }
+
+        return $slug;
+    }
 
 
     public function index()
@@ -85,27 +87,12 @@ class LakeController extends Controller
             ->orderBy('state')
             ->orderBy('county')
             ->orderBy('name')
-            ->get([
-                'id',
-                'name',
-                'slug',
-                'region',
-                'lat',
-                'lng',
-                'state',
-                'county',
-            ]);
+            ->get(['id', 'name', 'slug', 'region', 'lat', 'lng', 'state', 'county']);
 
-        $favoriteIds = [];
+        $favoriteIds = $user
+            ? $user->favoriteLakes()->pluck('lakes.id')->toArray()
+            : [];
 
-        if ($user) {
-            $favoriteIds = $user
-                ->favoriteLakes()
-                ->pluck('lakes.id')
-                ->toArray();
-        }
-
-        // decorate with favorite + safety
         $lakes = $lakes->map(function (Lake $lake) use ($favoriteIds) {
             $lake->is_favorite = in_array($lake->id, $favoriteIds, true);
             $lake->safety = $this->safetyService->computeForLake($lake);
@@ -113,18 +100,22 @@ class LakeController extends Controller
             return $lake;
         });
 
-        // group into state -> county -> lakes
-        $states = $lakes
+        return Inertia::render('Lakes/Index', [
+            'states' => $this->groupLakesByStateAndCounty($lakes),
+        ]);
+    }
+
+    private function groupLakesByStateAndCounty(Collection $lakes): Collection
+    {
+        return $lakes
             ->groupBy('state')
             ->map(function ($stateGroup, $stateName) {
                 $counties = $stateGroup
                     ->groupBy('county')
-                    ->map(function ($countyGroup, $countyName) {
-                        return [
-                            'name' => $countyName,
-                            'lakes' => $countyGroup->values(), // keep as array of lakes
-                        ];
-                    })
+                    ->map(fn ($countyGroup, $countyName) => [
+                        'name' => $countyName,
+                        'lakes' => $countyGroup->values(),
+                    ])
                     ->values();
 
                 return [
@@ -133,10 +124,6 @@ class LakeController extends Controller
                 ];
             })
             ->values();
-
-        return Inertia::render('Lakes/Index', [
-            'states' => $states,
-        ]);
     }
 
 
@@ -144,16 +131,7 @@ class LakeController extends Controller
     {
         $lake = Lake::where('slug', $slug)->firstOrFail();
 
-        if (trim((string) $lake->state) === '' || trim((string) $lake->county) === '') {
-            $geo = app(ReverseGeoCodeService::class)
-                ->usCensus((float) $lake->lat, (float) $lake->lng);
-
-            if ($geo) {
-                $lake->state = $geo['state'];
-                $lake->county = $geo['county'];
-                $lake->save();
-            }
-        }
+        $this->backfillLakeRegion($lake);
 
         $reports = $lake->iceReports()
             ->where('is_hidden', false)
@@ -174,13 +152,27 @@ class LakeController extends Controller
                 'created_at',
             ]);
 
-        $safety = $this->safetyService->computeForLake($lake);
-
         return Inertia::render('Lakes/Show', [
             'lake' => $lake,
             'reports' => $reports,
-            'safety' => $safety,
+            'safety' => $this->safetyService->computeForLake($lake),
         ]);
+    }
+
+    private function backfillLakeRegion(Lake $lake): void
+    {
+        if (trim((string) $lake->state) !== '' && trim((string) $lake->county) !== '') {
+            return;
+        }
+
+        $geo = app(ReverseGeoCodeService::class)
+            ->usCensus((float) $lake->lat, (float) $lake->lng);
+
+        if ($geo) {
+            $lake->state = $geo['state'];
+            $lake->county = $geo['county'];
+            $lake->save();
+        }
     }
 
     public function toggleFavorite(string $slug)
@@ -221,10 +213,23 @@ class LakeController extends Controller
             ->limit(25)
             ->get(['id', 'name', 'slug', 'region', 'lat', 'lng', 'state', 'county', 'status', 'created_at']);
 
+        $reviewLakes = $this->decorateReviewLakes($reviewLakes, $userId);
+
+        return Inertia::render('Lakes/Mine', [
+            'lakes' => $lakes,
+            'reviewLakes' => $reviewLakes,
+        ]);
+    }
+
+    private function decorateReviewLakes(Collection $reviewLakes, int $userId): Collection
+    {
         $reviewIds = $reviewLakes->pluck('id')->values()->all();
-        $reviewReports = IceReport::whereIn('lake_id', $reviewIds)
+
+        $reportCounts = IceReport::whereIn('lake_id', $reviewIds)
             ->where('is_hidden', false)
-            ->get(['lake_id']);
+            ->get(['lake_id'])
+            ->groupBy('lake_id')
+            ->map(fn ($group) => $group->count());
 
         $reviewVerifications = LakeVerification::whereIn('lake_id', $reviewIds)
             ->get(['lake_id', 'user_id', 'verdict']);
@@ -235,30 +240,18 @@ class LakeController extends Controller
 
         $verificationCounts = $reviewVerifications
             ->groupBy('lake_id')
-            ->map(function ($group) {
-                return [
-                    'approve' => $group->where('verdict', 'approve')->count(),
-                    'reject' => $group->where('verdict', 'reject')->count(),
-                    'flag' => $group->where('verdict', 'flag')->count(),
-                ];
-            });
+            ->map(fn ($group) => [
+                'approve' => $group->where('verdict', 'approve')->count(),
+                'reject' => $group->where('verdict', 'reject')->count(),
+                'flag' => $group->where('verdict', 'flag')->count(),
+            ]);
 
-        $reportCounts = $reviewReports
-            ->groupBy('lake_id')
-            ->map(fn ($group) => $group->count());
-
-        $reviewLakes = $reviewLakes->map(function (Lake $lake) use ($verificationCounts, $reportCounts, $userVerifications) {
-            $counts = $verificationCounts[$lake->id] ?? ['approve' => 0, 'reject' => 0, 'flag' => 0];
-            $lake->verification_counts = $counts;
+        return $reviewLakes->map(function (Lake $lake) use ($verificationCounts, $reportCounts, $userVerifications) {
+            $lake->verification_counts = $verificationCounts[$lake->id] ?? ['approve' => 0, 'reject' => 0, 'flag' => 0];
             $lake->report_count = (int) ($reportCounts[$lake->id] ?? 0);
             $lake->user_verdict = $userVerifications->get($lake->id)?->verdict;
             return $lake;
         });
-
-        return Inertia::render('Lakes/Mine', [
-            'lakes' => $lakes,
-            'reviewLakes' => $reviewLakes,
-        ]);
     }
 
 }

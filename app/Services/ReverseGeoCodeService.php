@@ -11,42 +11,38 @@ class ReverseGeoCodeService
     {
         $key = 'revgeo:census:' . round($lat, 5) . ':' . round($lng, 5);
 
-        return Cache::remember($key, now()->addDays(180), function () use ($lat, $lng) {
-            $url = 'https://geocoding.geo.census.gov/geocoder/geographies/coordinates';
+        return Cache::remember($key, now()->addDays(180), fn () => $this->fetchUsCensus($lat, $lng));
+    }
 
-            $resp = Http::timeout(8)->get($url, [
-                'x' => $lng,
-                'y' => $lat,
-                'benchmark' => 'Public_AR_Current',
-                'vintage' => 'Current_Current',
-                'format' => 'json',
-            ]);
+    private function fetchUsCensus(float $lat, float $lng): ?array
+    {
+        $resp = Http::timeout(8)->get('https://geocoding.geo.census.gov/geocoder/geographies/coordinates', [
+            'x' => $lng,
+            'y' => $lat,
+            'benchmark' => 'Public_AR_Current',
+            'vintage' => 'Current_Current',
+            'format' => 'json',
+        ]);
 
-            if (!$resp->ok()) {
-                return null;
-            }
+        if (!$resp->ok()) {
+            return null;
+        }
 
-            $json = $resp->json();
+        $geos = $resp->json()['result']['geographies'] ?? null;
+        if (!$geos) {
+            return null;
+        }
 
-            $geos = $json['result']['geographies'] ?? null;
-            if (!$geos) {
-                return null;
-            }
+        $stateName = $geos['States'][0]['NAME'] ?? null;
+        $countyName = $geos['Counties'][0]['NAME'] ?? null;
 
-            $states = $geos['States'] ?? [];
-            $counties = $geos['Counties'] ?? [];
+        if (!$stateName || !$countyName) {
+            return null;
+        }
 
-            $stateName = $states[0]['NAME'] ?? null;
-            $countyName = $counties[0]['NAME'] ?? null;
-
-            if (!$stateName || !$countyName) {
-                return null;
-            }
-
-            return [
-                'state' => $stateName,
-                'county' => $countyName,
-            ];
-        });
+        return [
+            'state' => $stateName,
+            'county' => $countyName,
+        ];
     }
 }

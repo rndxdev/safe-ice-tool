@@ -68,13 +68,7 @@ class FeedInteractionController extends Controller
             'parent_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        if (!empty($data['parent_id'])) {
-            FeedComment::query()
-                ->where('id', $data['parent_id'])
-                ->where('item_type', $data['item_type'])
-                ->where('item_id', $data['item_id'])
-                ->firstOrFail();
-        }
+        $this->assertParentBelongsToItem($data);
 
         $comment = FeedComment::create([
             'user_id' => Auth::id(),
@@ -84,9 +78,7 @@ class FeedInteractionController extends Controller
             'body' => $data['body'],
         ]);
 
-        // Process @mentions and create notifications
-        $mentionService = app(MentionNotificationService::class);
-        $mentionService->processText(
+        app(MentionNotificationService::class)->processText(
             $data['body'],
             Auth::user(),
             'a comment',
@@ -95,6 +87,19 @@ class FeedInteractionController extends Controller
         );
 
         return back();
+    }
+
+    private function assertParentBelongsToItem(array $data): void
+    {
+        if (empty($data['parent_id'])) {
+            return;
+        }
+
+        FeedComment::query()
+            ->where('id', $data['parent_id'])
+            ->where('item_type', $data['item_type'])
+            ->where('item_id', $data['item_id'])
+            ->firstOrFail();
     }
 
     private function getUrlForItem(string $type, int $id): ?string

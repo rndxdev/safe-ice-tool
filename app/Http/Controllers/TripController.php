@@ -88,6 +88,16 @@ class TripController extends Controller
             abort(403);
         }
 
+        $data = $this->validateTripPayload($request);
+        $trip->update($data);
+
+        return redirect()
+            ->route('trips.index')
+            ->with('success', 'Trip updated.');
+    }
+
+    private function validateTripPayload(Request $request): array
+    {
         $favoriteLakeIds = Auth::user()
             ->favoriteLakes()
             ->pluck('lakes.id')
@@ -107,10 +117,6 @@ class TripController extends Controller
         $data['avoid_slush'] = $request->boolean('avoid_slush');
         $data['avoid_pressure_cracks'] = $request->boolean('avoid_pressure_cracks');
 
-        $trip->update($data);
-
-        return redirect()
-            ->route('trips.index')
-            ->with('success', 'Trip updated.');
+        return $data;
     }
 }
