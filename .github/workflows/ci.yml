@@ -8,7 +8,7 @@ on:
 
 jobs:
   tests:
-    name: PHP tests
+    name: Build & test
     runs-on: ubuntu-latest
 
     steps:
@@ -30,6 +30,21 @@ jobs:
 
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # Build assets after Composer install so app.js can resolve the
+      # vendor/tightenco/ziggy import, and so page-rendering feature tests
+      # find the Vite manifest.
+      - name: Build assets
+        run: npm run build
 
       - name: Prepare environment
         run: |
@@ -59,22 +74,3 @@ jobs:
 
       - name: Check code style
         run: vendor/bin/pint --test
-
-  frontend:
-    name: Frontend build
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-
-      - name: Install npm dependencies
-        run: npm ci
-
-      - name: Build assets
-        run: npm run build
