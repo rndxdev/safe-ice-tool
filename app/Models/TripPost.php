@@ -35,8 +35,10 @@ class TripPost extends Model
         'people_tags',
         'location_tags',
         'is_public',
-        'share_token',
     ];
+
+    // share_token is deliberately NOT fillable — it is generated server-side
+    // (Str::random) so it can't be set to a chosen/guessable value via request input.
 
     protected $casts = [
         'people_tags' => 'array',

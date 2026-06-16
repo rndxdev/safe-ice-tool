@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CommentLike;
 use App\Models\TripPost;
 use App\Models\TripPostComment;
-use App\Models\CommentLike;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -16,17 +16,39 @@ class TripPostShareController extends Controller
     public function show(string $token)
     {
         $post = TripPost::query()
-            ->with(['user:id,name,username', 'lake:id,name,slug,region', 'media'])
+            ->with(['user:id,name,username', 'lake:id,name,slug,region', 'media', 'trip:id,lake_id', 'trip.lake:id,name,region'])
             ->whereNotNull('share_token')
             ->where('share_token', $token)
             ->firstOrFail();
 
-        if (!$post->is_public) {
+        if (! $post->is_public) {
             abort(404);
         }
 
+        // Whitelist the fields exposed to unauthenticated visitors — never leak
+        // share_token, user_id, trip_id, lake_id or other internal columns.
         return Inertia::render('Posts/Share', [
-            'post' => $post,
+            'post' => [
+                'id' => $post->id,
+                'caption' => $post->caption,
+                'created_at' => $post->created_at,
+                'user' => $post->user ? [
+                    'id' => $post->user->id,
+                    'name' => $post->user->name,
+                    'username' => $post->user->username,
+                ] : null,
+                'trip' => $post->trip && $post->trip->lake ? [
+                    'lake' => [
+                        'name' => $post->trip->lake->name,
+                        'region' => $post->trip->lake->region,
+                    ],
+                ] : null,
+                'media' => $post->media->map(fn ($m) => [
+                    'id' => $m->id,
+                    'url' => $m->url,
+                    'mime' => $m->mime,
+                ])->values(),
+            ],
             'comments' => $this->buildCommentThread($post->id),
             'shareUrl' => url()->current(),
             'canLogin' => route_has('login'),
@@ -65,7 +87,7 @@ class TripPostShareController extends Controller
         $byId = $commentTree->keyBy('id');
         $children = [];
         foreach ($commentTree as $comment) {
-            if (!empty($comment['parent_id'])) {
+            if (! empty($comment['parent_id'])) {
                 $children[$comment['parent_id']][] = $comment;
             }
         }
@@ -96,7 +118,7 @@ class TripPostShareController extends Controller
         $post->is_public = true;
         $post->save();
 
-        return back()->with('share_url', url('/p/' . $post->share_token));
+        return back()->with('share_url', url('/p/'.$post->share_token));
     }
 
     public function unshare(TripPost $post): RedirectResponse
