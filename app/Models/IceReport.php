@@ -30,9 +30,10 @@ class IceReport extends Model
         'has_slush',
         'has_pressure_cracks',
         'notes',
-        'is_flagged',
-        'is_hidden',
     ];
+
+    // is_flagged / is_hidden are deliberately NOT fillable — they are moderation
+    // flags set only by server-side logic (see IceReportController::syncVoteCounts).
 
     public function lake(): BelongsTo
     {
