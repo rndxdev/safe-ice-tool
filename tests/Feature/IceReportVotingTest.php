@@ -3,18 +3,16 @@
 namespace Tests\Feature;
 
 use App\Models\IceReport;
+use App\Models\IceReportVote;
 use App\Models\Lake;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Pins the CURRENT behaviour of ice-report voting and the -5 auto-hide moderation.
- *
- * NOTE: voting currently has no per-user dedup (audit finding C1). The
- * `test_current_behaviour_*` cases below intentionally document that a single
- * user can move the score arbitrarily. When C1 is fixed (one vote per user),
- * those cases are expected to change.
+ * Covers ice-report voting after the C1 fix: one vote per user (deduped via a
+ * dedicated votes table), with counts recomputed from that table and the -5
+ * net-score auto-hide preserved.
  */
 class IceReportVotingTest extends TestCase
 {
@@ -27,6 +25,13 @@ class IceReportVotingTest extends TestCase
         return IceReport::factory()->for($lake)->create($overrides);
     }
 
+    private function voteAs(User $user, IceReport $report, string $direction)
+    {
+        return $this->actingAs($user)
+            ->from(route('lakes.show', $report->lake->slug))
+            ->post(route("reports.{$direction}", $report));
+    }
+
     public function test_guests_cannot_vote(): void
     {
         $report = $this->report();
@@ -34,40 +39,83 @@ class IceReportVotingTest extends TestCase
         $this->post(route('reports.downvote', $report))->assertRedirect(route('login'));
 
         $this->assertSame(0, $report->fresh()->downvotes);
+        $this->assertDatabaseCount('ice_report_votes', 0);
     }
 
-    public function test_upvote_increments_upvotes(): void
+    public function test_upvote_records_a_single_vote_and_counts_it(): void
     {
-        $report = $this->report(['upvotes' => 0]);
+        $report = $this->report();
+        $user = User::factory()->create();
 
-        $this->actingAs(User::factory()->create())
-            ->from(route('lakes.show', $report->lake->slug))
-            ->post(route('reports.upvote', $report))
+        $this->voteAs($user, $report, 'upvote')
             ->assertRedirect(route('lakes.show', $report->lake->slug));
 
         $this->assertSame(1, $report->fresh()->upvotes);
+        $this->assertDatabaseHas('ice_report_votes', [
+            'ice_report_id' => $report->id,
+            'user_id' => $user->id,
+            'value' => IceReportVote::UP,
+        ]);
     }
 
-    public function test_downvote_increments_downvotes(): void
+    public function test_downvote_records_a_single_vote(): void
     {
-        $report = $this->report(['downvotes' => 0]);
+        $report = $this->report();
+        $user = User::factory()->create();
 
-        $this->actingAs(User::factory()->create())
-            ->from(route('lakes.show', $report->lake->slug))
-            ->post(route('reports.downvote', $report))
-            ->assertRedirect(route('lakes.show', $report->lake->slug));
+        $this->voteAs($user, $report, 'downvote');
 
         $this->assertSame(1, $report->fresh()->downvotes);
     }
 
-    public function test_report_is_hidden_and_flagged_when_net_score_reaches_minus_five(): void
+    public function test_pressing_the_same_direction_again_toggles_the_vote_off(): void
     {
-        // Start at -4 (already 4 downvotes), one more crosses the threshold.
-        $report = $this->report(['downvotes' => 4, 'is_hidden' => false, 'is_flagged' => false]);
+        $report = $this->report();
+        $user = User::factory()->create();
 
-        $this->actingAs(User::factory()->create())
-            ->from(route('lakes.show', $report->lake->slug))
-            ->post(route('reports.downvote', $report));
+        $this->voteAs($user, $report, 'upvote');
+        $this->voteAs($user, $report, 'upvote');
+
+        $this->assertSame(0, $report->fresh()->upvotes);
+        $this->assertDatabaseCount('ice_report_votes', 0);
+    }
+
+    public function test_voting_the_opposite_direction_switches_the_vote(): void
+    {
+        $report = $this->report();
+        $user = User::factory()->create();
+
+        $this->voteAs($user, $report, 'downvote');
+        $this->voteAs($user, $report, 'upvote');
+
+        $fresh = $report->fresh();
+        $this->assertSame(0, $fresh->downvotes);
+        $this->assertSame(1, $fresh->upvotes);
+        $this->assertDatabaseCount('ice_report_votes', 1);
+    }
+
+    public function test_a_single_user_cannot_stack_votes_to_hide_a_report(): void
+    {
+        // This is the C1 fix: the old behaviour let one user downvote repeatedly.
+        $report = $this->report();
+        $user = User::factory()->create();
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->voteAs($user, $report, 'downvote');
+        }
+
+        $fresh = $report->fresh();
+        $this->assertSame(1, $fresh->downvotes);
+        $this->assertFalse((bool) $fresh->is_hidden);
+        $this->assertDatabaseCount('ice_report_votes', 1);
+    }
+
+    public function test_report_is_hidden_and_flagged_when_five_distinct_users_downvote(): void
+    {
+        $report = $this->report();
+
+        User::factory()->count(5)->create()
+            ->each(fn (User $user) => $this->voteAs($user, $report, 'downvote'));
 
         $fresh = $report->fresh();
         $this->assertSame(5, $fresh->downvotes);
@@ -75,14 +123,12 @@ class IceReportVotingTest extends TestCase
         $this->assertTrue((bool) $fresh->is_flagged);
     }
 
-    public function test_report_stays_visible_just_above_the_threshold(): void
+    public function test_report_stays_visible_at_four_distinct_downvotes(): void
     {
-        // -4 net after this downvote (3 existing -> 4), not yet hidden.
-        $report = $this->report(['downvotes' => 3, 'is_hidden' => false]);
+        $report = $this->report();
 
-        $this->actingAs(User::factory()->create())
-            ->from(route('lakes.show', $report->lake->slug))
-            ->post(route('reports.downvote', $report));
+        User::factory()->count(4)->create()
+            ->each(fn (User $user) => $this->voteAs($user, $report, 'downvote'));
 
         $fresh = $report->fresh();
         $this->assertSame(4, $fresh->downvotes);
@@ -91,37 +137,18 @@ class IceReportVotingTest extends TestCase
 
     public function test_upvotes_offset_downvotes_in_the_moderation_score(): void
     {
-        // 5 downvotes but 5 upvotes => net 0, must stay visible.
-        $report = $this->report(['upvotes' => 4, 'downvotes' => 5, 'is_hidden' => false]);
+        $report = $this->report();
 
-        $this->actingAs(User::factory()->create())
-            ->from(route('lakes.show', $report->lake->slug))
-            ->post(route('reports.upvote', $report));
+        // 5 downvotes alone would hit the -5 threshold, but 2 upvotes keep the
+        // net score at -3, so the report must stay visible.
+        User::factory()->count(2)->create()
+            ->each(fn (User $user) => $this->voteAs($user, $report, 'upvote'));
+        User::factory()->count(5)->create()
+            ->each(fn (User $user) => $this->voteAs($user, $report, 'downvote'));
 
         $fresh = $report->fresh();
-        $this->assertSame(5, $fresh->upvotes);
+        $this->assertSame(2, $fresh->upvotes);
         $this->assertSame(5, $fresh->downvotes);
         $this->assertFalse((bool) $fresh->is_hidden);
-    }
-
-    /**
-     * CURRENT (pre-C1) behaviour: there is no per-user vote dedup, so the same
-     * user voting repeatedly stacks downvotes and can unilaterally hide a report.
-     * This is the vulnerability C1 will close — update this test when it does.
-     */
-    public function test_current_behaviour_single_user_can_stack_downvotes_to_hide_a_report(): void
-    {
-        $report = $this->report(['downvotes' => 0, 'is_hidden' => false]);
-        $user = User::factory()->create();
-
-        for ($i = 0; $i < 5; $i++) {
-            $this->actingAs($user)
-                ->from(route('lakes.show', $report->lake->slug))
-                ->post(route('reports.downvote', $report));
-        }
-
-        $fresh = $report->fresh();
-        $this->assertSame(5, $fresh->downvotes);
-        $this->assertTrue((bool) $fresh->is_hidden);
     }
 }

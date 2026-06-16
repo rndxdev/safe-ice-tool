@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\IceReport;
+use App\Models\IceReportVote;
 use App\Models\Lake;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
-use Illuminate\Http\RedirectResponse;
 
 class IceReportController extends Controller
 {
@@ -40,65 +42,94 @@ class IceReportController extends Controller
             ->with('success', 'Report submitted.');
     }
 
-   public function myReports()
-{
-    $userId = Auth::id();
+    public function myReports()
+    {
+        $userId = Auth::id();
 
-    $reports = IceReport::with('lake')
-        ->where('user_id', $userId)
-        ->latest()
-        ->get([
-            'id',
-            'lake_id',
-            'thickness_inches',
-            'ice_type',
-            'traffic_type',
-            'has_slush',
-            'has_pressure_cracks',
-            'upvotes',
-            'downvotes',
-            'is_hidden',
-            'is_flagged',
-            'notes',
-            'created_at',
-        ]);
+        $reports = IceReport::with('lake')
+            ->where('user_id', $userId)
+            ->latest()
+            ->get([
+                'id',
+                'lake_id',
+                'thickness_inches',
+                'ice_type',
+                'traffic_type',
+                'has_slush',
+                'has_pressure_cracks',
+                'upvotes',
+                'downvotes',
+                'is_hidden',
+                'is_flagged',
+                'notes',
+                'created_at',
+            ]);
 
-    return Inertia::render('Reports/MyReports', [
-        'reports' => $reports,
-    ]);
-}
-
-
-    public function upvote(IceReport $report): RedirectResponse
-{
-    $report->increment('upvotes');
-
-    $this->maybeModerate($report);
-
-    return back()->with('success', 'Thanks for voting.');
-}
-
-public function downvote(IceReport $report): RedirectResponse
-{
-    $report->increment('downvotes');
-
-    $this->maybeModerate($report);
-
-    return back()->with('success', 'Vote recorded.');
-}
-
-protected function maybeModerate(IceReport $report): void
-{
-    $report->refresh();
-
-    $score = $report->upvotes - $report->downvotes;
-
-    if ($score <= -5) {
-        $report->update([
-            'is_hidden' => true,
-            'is_flagged' => true,
+        return Inertia::render('Reports/MyReports', [
+            'reports' => $reports,
         ]);
     }
-}
 
+    public function upvote(IceReport $report): RedirectResponse
+    {
+        $this->castVote($report, IceReportVote::UP);
+
+        return back()->with('success', 'Thanks for voting.');
+    }
+
+    public function downvote(IceReport $report): RedirectResponse
+    {
+        $this->castVote($report, IceReportVote::DOWN);
+
+        return back()->with('success', 'Vote recorded.');
+    }
+
+    /**
+     * Record one vote per user. Pressing the same direction again clears the
+     * vote (toggle off); the opposite direction switches it. Counts are
+     * recomputed from the votes table so they can't be inflated by spamming.
+     */
+    protected function castVote(IceReport $report, int $value): void
+    {
+        $userId = Auth::id();
+
+        DB::transaction(function () use ($report, $userId, $value) {
+            $existing = IceReportVote::where('ice_report_id', $report->id)
+                ->where('user_id', $userId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing && $existing->value === $value) {
+                $existing->delete();
+            } else {
+                IceReportVote::updateOrCreate(
+                    ['ice_report_id' => $report->id, 'user_id' => $userId],
+                    ['value' => $value],
+                );
+            }
+
+            $this->syncVoteCounts($report);
+        });
+    }
+
+    /**
+     * Recompute the denormalised counters from the votes table and apply the
+     * -5 net-score auto-hide. Hiding is one-way (a recovering report stays
+     * hidden until a moderator reviews it), preserving prior behaviour.
+     */
+    protected function syncVoteCounts(IceReport $report): void
+    {
+        $upvotes = $report->votes()->where('value', IceReportVote::UP)->count();
+        $downvotes = $report->votes()->where('value', IceReportVote::DOWN)->count();
+
+        $report->upvotes = $upvotes;
+        $report->downvotes = $downvotes;
+
+        if (! $report->is_hidden && ($upvotes - $downvotes) <= -5) {
+            $report->is_hidden = true;
+            $report->is_flagged = true;
+        }
+
+        $report->save();
+    }
 }
