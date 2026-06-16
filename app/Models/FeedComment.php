@@ -16,6 +16,17 @@ class FeedComment extends Model
         'body',
     ];
 
+    protected static function booted(): void
+    {
+        // When a feed comment is deleted directly, remove the likes on it.
+        // (Bulk deletes from the cleanup service handle their own likes.)
+        static::deleting(function (FeedComment $comment) {
+            CommentLike::where('comment_type', 'feed_comment')
+                ->where('comment_id', $comment->id)
+                ->delete();
+        });
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

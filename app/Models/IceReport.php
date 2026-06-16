@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\FeedInteractionCleanup;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class IceReport extends Model
 {
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::deleting(function (IceReport $report) {
+            app(FeedInteractionCleanup::class)->purgeItem('report', $report->id);
+        });
+    }
 
     protected $fillable = [
         'lake_id',
