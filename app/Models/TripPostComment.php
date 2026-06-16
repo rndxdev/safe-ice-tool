@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\FeedInteractionCleanup;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,6 +13,13 @@ class TripPostComment extends Model
     use HasFactory;
 
     protected $table = 'trip_post_comments';
+
+    protected static function booted(): void
+    {
+        static::deleting(function (TripPostComment $comment) {
+            app(FeedInteractionCleanup::class)->purgeItem('comment', $comment->id);
+        });
+    }
 
     protected $fillable = [
         'trip_post_id',

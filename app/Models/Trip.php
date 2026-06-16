@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\FeedInteractionCleanup;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,6 +10,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Trip extends Model
 {
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::deleting(function (Trip $trip) {
+            app(FeedInteractionCleanup::class)->purgeItem('trip_share', $trip->id);
+        });
+    }
 
     protected $fillable = [
         'user_id',
