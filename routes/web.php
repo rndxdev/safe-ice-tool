@@ -1,19 +1,19 @@
 <?php
 
-use App\Http\Controllers\IceReportController;
-use App\Http\Controllers\LakeController;
-use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\TripController;
-use App\Http\Controllers\TripShareController;
-use App\Http\Controllers\TripPostController;
-use App\Http\Controllers\TripPostShareController;
-use App\Http\Controllers\TripPostCommentController;
+use App\Http\Controllers\CommentLikeController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FeedInteractionController;
-use App\Http\Controllers\CommentLikeController;
+use App\Http\Controllers\IceReportController;
+use App\Http\Controllers\LakeController;
 use App\Http\Controllers\LakeVerificationController;
-use App\Http\Controllers\UserProfileController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\TripController;
+use App\Http\Controllers\TripPostCommentController;
+use App\Http\Controllers\TripPostController;
+use App\Http\Controllers\TripPostShareController;
+use App\Http\Controllers\TripShareController;
+use App\Http\Controllers\UserProfileController;
 use App\Models\Trip;
 use App\Services\LakeSafetyService;
 use Illuminate\Foundation\Application;
@@ -77,16 +77,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::post('/feed/acknowledge', [FeedInteractionController::class, 'acknowledge'])
+        ->middleware('throttle:60,1')
         ->name('feed.acknowledge');
     Route::post('/feed/like', [FeedInteractionController::class, 'toggleLike'])
+        ->middleware('throttle:60,1')
         ->name('feed.like');
     Route::post('/feed/comment', [FeedInteractionController::class, 'comment'])
+        ->middleware('throttle:20,1')
         ->name('feed.comment');
 
     Route::post('/comments/like', [CommentLikeController::class, 'toggle'])
+        ->middleware('throttle:60,1')
         ->name('comments.like');
 
     Route::post('/lakes/{lake}/verify', [LakeVerificationController::class, 'store'])
+        ->middleware('throttle:20,1')
         ->name('lakes.verify');
 
     // User profiles (public lookup)
@@ -111,7 +116,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Lakes (order matters)
     Route::get('/lakes', [LakeController::class, 'index'])->name('lakes.index');
     Route::get('/lakes/create', [LakeController::class, 'create'])->name('lakes.create');
-    Route::post('/lakes', [LakeController::class, 'store'])->name('lakes.store');
+    Route::post('/lakes', [LakeController::class, 'store'])
+        ->middleware('throttle:10,1')
+        ->name('lakes.store');
     Route::get('/lakes/{slug}', [LakeController::class, 'show'])->name('lakes.show');
 
     Route::get('/my-lakes', [LakeController::class, 'mine'])->name('lakes.mine');
@@ -120,11 +127,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('lakes.favorite');
 
     // Ice reports
-    Route::post('/lakes/{slug}/reports', [IceReportController::class, 'store'])->name('reports.store');
+    Route::post('/lakes/{slug}/reports', [IceReportController::class, 'store'])
+        ->middleware('throttle:15,1')
+        ->name('reports.store');
     Route::get('/my-reports', [IceReportController::class, 'myReports'])->name('reports.mine');
 
-    Route::post('/reports/{report}/upvote', [IceReportController::class, 'upvote'])->name('reports.upvote');
-    Route::post('/reports/{report}/downvote', [IceReportController::class, 'downvote'])->name('reports.downvote');
+    Route::post('/reports/{report}/upvote', [IceReportController::class, 'upvote'])
+        ->middleware('throttle:30,1')
+        ->name('reports.upvote');
+    Route::post('/reports/{report}/downvote', [IceReportController::class, 'downvote'])
+        ->middleware('throttle:30,1')
+        ->name('reports.downvote');
 
     // Trips
     Route::get('/trips', [TripController::class, 'index'])->name('trips.index');
@@ -151,7 +164,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/posts/{post}/share', [TripPostShareController::class, 'share'])->name('posts.share');
     Route::post('/posts/{post}/unshare', [TripPostShareController::class, 'unshare'])->name('posts.unshare');
 
-    Route::post('/posts/{post}/comments', [TripPostCommentController::class, 'store'])->name('posts.comments.store');
+    Route::post('/posts/{post}/comments', [TripPostCommentController::class, 'store'])
+        ->middleware('throttle:20,1')
+        ->name('posts.comments.store');
 });
 
-require __DIR__ . '/auth.php';
+require __DIR__.'/auth.php';
